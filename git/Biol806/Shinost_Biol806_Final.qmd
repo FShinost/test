@@ -1,0 +1,811 @@
+---
+title: "Spatial Analysis of Fisher Abundance and Occupancy"
+author: "Frank Shinost"
+format: 
+  pdf:
+    code-overflow: wrap
+    fig-float: True
+    fontsize: 12pt
+    fontfamily: times
+editor: visual
+editor_options: 
+  chunk_output_type: console
+bibliography: references.bib
+csl: ecology.csl
+---
+
+```{r setup, echo=FALSE, message=FALSE, results='hide',warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=40), tidy=TRUE)
+
+library(camtrapR)
+library(unmarked)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(lubridate)
+library(patchwork)
+library(sf)
+library(raster)
+library(ggspatial)
+library(png)   
+library(ggimage)
+library(cowplot)
+library(knitr)
+library(kableExtra)
+library(grid)
+```
+
+## Introduction
+
+The ability to disperse across the landscape and occupy a large geographical range drive a specie’s abundance at a course scale. At finer scales, the characteristics of landscape patches determines the distribution of widely distributed, generalist species that rely on abundant habitat resources [@hanski1982]. Among these characteristics are natural and anthropogenic factors which causes variation in local species abundance across a range [@krebs2014]. These factors can act alone or in concert with one another and provide valuable ecological information to predict local species abundance. In the case of terrestrial carnivores, intraguild predation reduces the relative abundance of the lesser competitor [@palomares1999], [@erb2016]. This coupled with a disturbed habitat that causes landscape patchiness negatively impacts abundance. Urban development tends to reduce carnivore abundance through the loss of habitat, human exploitation, or pest control [@shochat2010].
+
+One such carnivore that has seen local population abundance fluctuate over time and space is the fisher (*Pekania pennanti*). Fisher are found in northern North America from east to west coast forests [@powellr.a.1993a]. Their role is a mid-size predator and competitor in a forest system that controls prey populations at lower trophic levels [@powellr.a.1993]. Fishers were distributed across the entirety of their historic geographic range at the time of European contact and were then locally extirpated in the northeast due to habitat loss and trapping until the 1900s. They have since rebounded across portions of their range through natural colonization and reintroductions. Historical and emerging threats continue to cause local declines in abundance. Understanding the resources that fishers require to survive and reproduce as well as how threats affect abundance will give clarity to wildlife managers.
+
+In New Hampshire, USA, a crucial resource for the reproduction, foraging, and resting of fishers are large sized trees and tall forests with a high level of canopy closure. The protection afforded to both fishers and their prey make mixed forest types, coniferous and deciduous species, a highly selected habit and a lack of preferred forest characteristics generally leads to low abundance.  Sympatric species using the same resources are problematic for fishers. Bobcats(*Lynx rufus*) have proven to be highly competitive and even predate upon fishers [@gompper2016], [@erb2016a], [@reed2017]. Natural factors cannot be included alone to estimate fisher abundance. The effects of human disturbance must be accounted for.
+
+Human development impacts carnivore populations differently, potentially creating zones of avoidance or attraction that vary by species [@moll2018a]. Rodenticide has emerged as threat to carnivores after it was found to be adversely affecting raptors. It is a poison used to control rodent populations both in urban and rural settings. Rodenticide use is becoming more synonymous with urbanization which ultimately leads to bioaccumulation in predators from lower trophic levels [@vandenbrink2018]. In New Hampshire, USA, a relatively high amount of rodenticides within fishers were detected in the southwest portion of the state and along urban regions [@buckley2023], [@silveira2024]. Fishers are not considered an urban adapted species, though poorer carnivore competitors have sought refuge from intraguild predation in urban areas [@moll2018]. Human exploitation of wildlife, although regulated, cannot be discounted as an affect for lower population abundance. Trapping success has varied across the state and has declined over the last decade with the lowest harvest rate recorded recently in 2022-23. State management objectives have corresponded to the recent decline in trapped fishers by restricting total take (NHFGD 2023).  
+
+Fisher population data indicates that fisher abundance in New Hampshire has declined in the past two decades. This study will aim to model the effects of human and non-human variables on fisher relative abundance and occupancy. Our questions and hypotheses are:
+
+Question 1: How are natural factors affecting fisher abundance in New Hampshire?
+
+Hypothesis 1: Interspecific competition between predators influences the abundance of subordinate carnivore species. Bobcats in New Hampshire affect fisher population by outcompeting and predating upon fishers [@erb2016b], [@palomares1999a].
+
+Prediction: There will be a negative relationship on fisher abundance in the presence of bobcats.
+
+Hypothesis 2: Fishers are a forest dwelling species. Forest structure and tree community composition provide the necessary resting and foraging structure to find prey and reproduce. Forest structure and community composition shape the population of fisher [@ellington2017], [@ganoe2024], [@olson2024].
+
+Prediction 1: Taller forest structure will increase fisher abundance.
+
+Prediction 2: Fisher will be more abundant in patches where there is mixed tree species composition.
+
+Question 2: How are non-natural factors affecting fisher abundance in New Hampshire?
+
+Hypothesis 1: Interspecific competition can be mediated by human development through avoidance by certain competitors and preference by others(Moll et al. 2018). Urban development will reduce interspecific competition because bobcats avoid such areas more strongly than fishers [@gompper2016a].
+
+Prediction: Fisher abundance will increase in suburban areas even when bobcats are present
+
+Hypothesis 2: Alternatively, human development increases the occurrence of rodenticide. Rodenticides use will be higher in urban areas, which will result in lower fisher abundance in those areas because of bioaccumulation via their consumption of rodent prey [@buckley2023], [@silveira2024].
+
+Prediction: Fisher populations where rodenticide exposure is lower will show higher abundance compared to areas with higher exposure to rodenticides.
+
+## Methods
+
+**Study Area**
+
+A camera trap network was deployed across the state of New Hampshire, USA, to conduct a spatial analysis to determine fisher abundance. The camera traps were deployed over three years as part of a coordinated survey, resulting in 306 sites arranged in 27 arrays (@fig-detections). To account for fisher movement behavior variation across seasons, May 15-Sept 15 of each year was the data collection window. The land coverage in the vicinity of camera sites consisted of multiple forest types and structure, variations of urban development, and agricultural land. Camera sites were located on publicly accessible land such as town lands, state forests, wildlife management areas, state parks, or National Forest. Sites were selected using generalized random tessellation stratified design which resulted in a recommended GPS coordinate for each camera emplacement and then further refined during camera installation.
+
+```{r Map, echo=FALSE, message=FALSE, results='hide',warning=FALSE, fig.show='hide'}
+
+# read in site data
+sites <- read_csv("ALLcams_maysept22.csv")
+fishbob_sites <- read_csv("fisherdetect.csv")#this is a clean version of the 
+# "fisherdata_v#, take out the 2248, 1270, 2045 and the covariates
+data_raw <- read_csv("fisherdata_17Nov.csv")
+
+# rename columns 3 and 4 where the lat and long are on the csv
+names(sites)[3:4] <- c("lat","lon")
+#names(fishbob_sites)[2:3] <- c("lat","lon")
+names(data_raw)[4:5] <- c("lat","lon")
+# make sites a spatial object, kind of like a tibble but for spatial analysis
+sites_sf <- st_as_sf(sites, coords = c("lon","lat"), crs = 4326)
+#fishbobsites_sf <- st_as_sf(fishbob_sites, coords = c("lon","lat"), crs = 4326)
+fishbobsites_sf <- st_as_sf(data_raw, coords = c("lon","lat"), crs = 4326)
+# check to make sure it worked, the ",2" means plot by the second(cameraID) column
+#plot(sites_sf[,2], pch = 20)
+#plot(fishbobsites_sf[,1], pch = 20)
+
+#ggplot(sites_sf) +
+  #geom_sf()
+
+#ggplot(fishbobsites_sf)+
+  #geom_sf()
+
+# Read in the shapefile for the state outline
+nh_outline <- st_read("nh_border.shp")
+
+# Project the state outline to the same CRS as your point data
+nh_outline <- st_transform(nh_outline, st_crs(sites_sf))
+
+#fisher detected cameras
+fishfilter <-  fishbobsites_sf %>% 
+  filter(fisher>0)
+bobfilter <- fishbobsites_sf %>% 
+  filter(bobcat>0)
+bothfilter <- fishbobsites_sf %>% 
+  filter(bobcat>0, fisher>0)
+
+# Plot the point data and the projected state outline together
+#all cameras in the state
+#with a legend and Yes/Np
+detect_loc <- ggplot() +
+  geom_sf(data = nh_outline, color = "black", fill = "white") +  # State outline
+  geom_sf(data = sites_sf, aes(color = "No"), size = 2) +# Point data
+  geom_sf(data = fishfilter, aes(color = "Yes"), size = 2)+
+  scale_color_manual(name = "Detected", values = c("No" = "blue", "Yes" = "orange")) +  # Legend for "No" and "Yes"
+  theme_bw()+
+   annotation_north_arrow(location = "tl",
+                            pad_x = unit(0.10, "in"), pad_y = unit(0.10, "in")) + 
+   annotation_scale(location = "br", width_hint = 0.2, 
+                    height_hint = 0.01, dist_unit = "km")
+detect_loc
+
+#size of point by detections 
+#this is what i want it to look like. Opacity with black outlines
+sizeplot <- ggplot() +
+  geom_sf(data = nh_outline, color = "black", fill = "white") +  # State outline
+  geom_sf(data = fishfilter, aes(size = fisher), color = "black", fill = "orange", alpha = 0.6, shape = 21, stroke = 0.75) + 
+  scale_size_continuous(name = "Fisher Detections", labels = scales::comma) +
+  theme_bw()+
+  annotation_north_arrow(location = "tl",
+                       pad_x = unit(0.10, "in"), pad_y = unit(0.10, "in")) + 
+  annotation_scale(location = "br", width_hint = 0.2, 
+                    height_hint = 0.01, dist_unit = "km")
+sizeplot
+
+detect_loc <- detect_loc +
+  theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
+
+sizeplot <- sizeplot +
+  theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+    legend.key.size = unit(0.4, "cm"),  # Reduce legend size
+    legend.text = element_text(size = 10),  # Reduce legend text size
+    legend.title = element_text(size = 12)) # Reduce legend title size
+    
+sizeplot
+
+# Combine detect_loc and sizeplot side by side
+combined_plot <- detect_loc | sizeplot+
+  plot_layout(guides = "collect", heights = c(1, -0.1))# Equal heights for rows
+combined_plot
+```
+
+```{r Detection plot, echo=FALSE, message=FALSE, results='hide',warning=FALSE, fig.width= 3.5, fig.height=3.5}
+#| label: fig-detections
+#| fig-cap: "Map of fisher naive occupancy, an individual fisher being detected at a site, obtained from 306 camera trap sites across New Hampshire, USA during the summer of 2022."
+
+detect_loc
+```
+
+**Covariate Development**
+
+Environmental covariates were determined a priori that we thought would influence fisher abundance and occupancy. These include forest variables and urban variables. The National Land Cover Database(NLCD 2021) was used to determine forest types as well as urbanization. The forest height was developed by New Hampshire GRANIT using data collected between 2011 and 2018(NH GRANIT 2022). All environmental data was extracted within a 3km buffer around each camera trap site. Individual camera trap covariates include latitude/longitude and the detection data of fisher and bobcats.
+
+**Analysis**
+
+Covariates were tested for collinearity. The most ecologically applicable covariate was retained for model comparison if Pearson’s r \|\>0.7\|. Week long detection histories were generated for fishers and bobcats and used to estimate local abundance and occupancy at each camera site using the Royle-Nichols model [@royle2003] within the unmarked package in R ver. 4.4.1 (R Core Team, `r citation("base")$year`). This package will account for the probability of detecting a fisher at individual camera sites based on model covariates and then provide estimates for determining abundance and occupancy. Bobcat data was converted to a rate of detection over the sampling period to scale the bobcat effect on fisher abundance and occupancy.
+
+Models generated to address our first question of natural factors determining abundance and occupancy were a bobcat model and habitat model. The bobcat model implemented the bobcat rate of detection as its only covariate. The habitat model included the proportion of deciduous tree cover, the average forest height, and the proportion of impervious surface with 3km of a camera site. To address non-natural factors influencing fisher abundance and occupancy, an urban model was fit to the data using only the proportion of impervious surface as a covariate. The exposure to rodenticide was the final non-natural model tested. It included the average risk of being exposed to rodenticides within 3km of a camera site. All models will be fit to the data and evaluated using Akaike Information Criterion(AIC) [@akaike1974].
+
+```{r Size Plot, echo=FALSE, message=FALSE, results='hide',warning=FALSE, fig.width= 3.75, fig.height=3.75}
+#| label: fig-sizeplot
+#| fig-cap: "Map of the count of fisher detections at each site during 15 May - 30 Sept 2022 from 306 camera trap sites across New Hampshire, USA."
+
+sizeplot
+```
+
+```{r Relative Abundance Models, echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+#Scale covariates
+data <- read.csv("fisherdata2_01Dec.csv")
+data <- data %>% 
+  dplyr::select(-X)
+
+data[,2:15]<-scale(data[,2:15]) #Columns 2-13 have covariates bobcat, forest height, impervious, etc.
+
+#Check for correlation
+cor(data[,2:15]) 
+
+#Tell unmarked where to look for the data it needs
+y<-data[,16:34]#detection history columns
+siteCovs<-data[,2:15]
+#siteCovs$Grid<-as.factor(data$Grid)
+
+#Relative abundance
+occRN<-unmarkedFrameOccu(y=y, siteCovs = siteCovs)
+summary(occRN)
+
+#Null Model
+null<-occuRN(~1 ~1, data=occRN) #null
+summary(null) #log-odds so need to back transform to rel abundance
+backTransform(null,'state') # 0.291 
+
+#Bobcat model
+bob<-occuRN(~1 ~bobcat_rate, occRN)
+summary(bob)
+backTransform(linearComb(bob,coefficients = c(1,0), type='state')) #0.292, mean bobcat abundance
+backTransform(linearComb(bob,coefficients = c(1,1), type='state')) #0.322, high bobcat abundance
+backTransform(linearComb(bob,coefficients = c(1,-1), type='state'))#0.265, low bobcat abundance
+
+#rodenticide
+AR_mod <- occuRN(~1 ~AR_mean, occRN)
+summary(AR_mod)
+backTransform(linearComb(AR_mod, coefficients = c(1, 0), type ='state')) # 0.282
+
+#strenghth of deciduous
+decid<-occuRN(~1 ~perc_decid, occRN)
+summary(decid)
+backTransform(linearComb(decid,coefficients = c(1,0), type='state')) # 0.249
+
+#Urban model
+urban <- occuRN(~1 ~perc_imper, occRN)
+summary(urban)
+backTransform(linearComb(urban,coefficients = c(1,0), type='state'))# 0.286
+
+
+#Apparently there is one line of code to make a plot
+plotEffects(bob, "state", "bobcat")
+
+
+#can i plot the backtransformed info?
+
+#using deciduous instead of mixed forest
+habitat2<-occuRN(~1 ~perc_decid+perc_imper+meanFH, occRN)
+summary(habitat2)
+backTransform(linearComb(habitat2,coefficients = c(1,0,0,0), type='state')) #0.283
+
+#all covariates 
+global2<-occuRN(~1 ~bobcat_rate+perc_decid+perc_imper+meanFH+AR_mean, occRN)
+summary(global2)
+backTransform(linearComb(global2,coefficients = c(1,0,0,0,0,0), type='state')) #0.28
+
+occ.set2<-fitList('null'=null,'bob'=bob, 'AR' = AR_mod, 'Urban' = urban, 'habitat'=habitat2)
+modSel(occ.set2)
+
+plots<-par(mfrow=c(2,3))
+plots<-plotEffects(bob,"state", "bobcat_rate")
+plots<-plotEffects(urban, "state", "perc_imper") 
+plots<-plotEffects(habitat2,"state", "perc_decid")
+plots<-plotEffects(habitat2,"state", "perc_imper")
+plots<-plotEffects(habitat2,"state", "meanFH")
+plots<-plotEffects(AR_mod, "state", "AR_mean")
+
+```
+
+```{r Relative Abundance Estimates, echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+
+# Example site data with covariate values for each model
+
+site_estimates <- read.csv("fisherdata2_01Dec.csv") %>% 
+  dplyr::select(-X)
+
+site_estimates <- site_estimates %>% 
+  dplyr::select(CameraID, perc_imper, perc_decid, meanFH, AR_mean, bobcat_rate) %>% 
+  mutate(perc_decid = perc_decid / 100)
+
+# Coefficients (Betas) from the models
+estimate_models <- list(
+  Urban = c(intercept = -1.252, perc_imper = 0.377),
+  Habitat = c(intercept = -1.263, perc_decid = -0.000667, perc_imper = 0.462, meanFH = 0.150),
+  Rodenticide = c(intercept = -1.266, AR_mean = 0.324),
+  Bobcat = c(intercept = -1.2304, bobcat_rate = 0.0967)
+)
+
+# Function to calculate abundance
+calculate_abundance <- function(data, betas, covariates) {
+  linear_comb <- betas["intercept"]
+  for (cov in covariates) {
+    linear_comb <- linear_comb + data[[cov]] * betas[[cov]]
+  }
+  abundance <- exp(linear_comb)  # Back-transform from log scale
+  return(abundance)
+}
+
+# Calculate abundance for each model and add to the site data
+site_estimates$Urban_abundance <- calculate_abundance(site_estimates, estimate_models$Urban, covariates = c("perc_imper"))
+site_estimates$Habitat_abundance <- calculate_abundance(site_estimates, estimate_models$Habitat, covariates = c("perc_decid", "perc_imper", "meanFH"))
+site_estimates$Rodenticide_abundance <- calculate_abundance(site_estimates, estimate_models$Rodenticide, covariates = c("AR_mean"))
+site_estimates$Bobcat_abundance <- calculate_abundance(site_estimates, estimate_models$Bobcat, covariates = c("bobcat_rate"))
+
+write.csv(site_estimates, "fisherabundance_05Dec.csv")
+
+site_est_summ <- site_estimates %>% 
+  drop_na() %>% 
+  summarize(mean_urban = mean(Urban_abundance),
+            minimum_urban = min(Urban_abundance),
+            maximum_urban = max(Urban_abundance),
+            range_urban = max(Urban_abundance)-min(Urban_abundance),
+            mean_habitat = mean(Habitat_abundance),
+            minimum_habitat = min(Habitat_abundance),
+            maximum_habitat = max(Habitat_abundance),
+            range_habitat = max(Habitat_abundance)-min(Habitat_abundance),
+            mean_AR = mean(Rodenticide_abundance),
+            minimum_AR = min(Rodenticide_abundance),
+            maximum_AR = max(Rodenticide_abundance),
+            range_AR = max(Rodenticide_abundance)-min(Rodenticide_abundance),
+            mean_bob = mean(Bobcat_abundance),
+            minimum_bob = min(Bobcat_abundance),
+            maximum_bob = max(Bobcat_abundance),
+            range_bob = max(Bobcat_abundance)-min(Bobcat_abundance)
+            )
+```
+
+## Results
+
+Models were fit to fisher weekly detection data to estimate fisher abundance and the probability of occupancy of a site. Fisher were detected 90 times at 48 of 306 camera traps over 40540 trap nights during the summer of 2022 (@fig-sizeplot) .
+
+**Relative Abundance Models**
+
+Fisher abundance estimates varied across the 306 camera sites for all models. Fisher abundance estimated from the urban model, which incorporated the proportion of impervious surface, ranged from `r round(site_est_summ$minimum_urban,3)` to `r round(site_est_summ$maximum_urban,3)`, (mean=`r round(site_est_summ$mean_urban,3)`). The habitat model ranged from `r round(site_est_summ$minimum_habitat,3)` to `r round(site_est_summ$maximum_habitat,3)`, (mean=`r round(site_est_summ$mean_habitat,3)`). The rodenticide model, which evaluated rodenticide exposure, ranged from `r round(site_est_summ$minimum_AR,3)` to `r round(site_est_summ$maximum_AR,3)`, (mean=`r round(site_est_summ$mean_AR,3)`). The bobcat model, measured as detection rate of bobcats over the survey period, ranged from `r round(site_est_summ$minimum_bob,3)` to `r round(site_est_summ$maximum_bob,3)`, (mean=`r round(site_est_summ$mean_bob,3)`).
+
+The significant estimators for fisher abundance were the proportion of impervious surface and rodenticide exposure (Table 1, @fig-relabund). All covariates for relative abundance were positively associated except for the proportion of deciduous forest (-0.001). The best performing model was the urban model followed by the habitat model, then rodenticide, and lastly the bobcat model (Table 2).
+
+```{r Plotting Abund. with for loop from Unmarked Package,echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+####Abundance Plots####
+# Define the models and their respective covariates
+models <- list(
+  list(model = bob, covariate = "bobcat_rate", x_label = "Bobcat Detection Rate", model_type = "Bobcat"),
+  list(model = urban, covariate = "perc_imper", x_label = "Urban", model_type = "Urban"),
+  list(model = habitat2, covariate = "perc_decid", x_label = "Proportion Deciduous Forest", model_type = "Habitat"),
+  list(model = habitat2, covariate = "perc_imper", x_label = "Proportion Impervious Surface", model_type = "Habitat"),
+  list(model = habitat2, covariate = "meanFH", x_label = "Average Forest Height", model_type = "Habitat"),
+  list(model = AR_mod, covariate = "AR_mean", x_label = "Rodenticide Exposure",model_type = "Rodenticide")
+)
+
+# Initialize lists to store effect data and plots
+effect_data_list <- list()
+plots_list <- list()
+
+# Loop through models and create plots
+for (i in seq_along(models)) {
+  # Extract the effect data for the current model and covariate
+  current_effect_data <- plotEffectsData(models[[i]]$model, "state", models[[i]]$covariate)
+  
+  # Add the model type to the effect data
+  current_effect_data$model_type <- models[[i]]$model_type
+  
+  # Store the effect data in the list
+  effect_data_list[[i]] <- current_effect_data
+  
+  # Create a ggplot for the current model
+  plot <- ggplot(current_effect_data, aes(x = covariateValue, y = Predicted)) +
+    geom_line(aes(color = model_type),size = 1) +
+    geom_ribbon(aes(ymin = lower, ymax = upper, fill = model_type), alpha = 0.2) +
+    scale_color_manual(values = c("Bobcat" = "blue", "Urban" = "orange", 
+                                  "Habitat" = "green4", "Rodenticide" = "brown4")) +
+    scale_fill_manual(values = c("Bobcat" = "blue", "Urban" = "orange", 
+                                 "Habitat" = "green4", "Rodenticide" = "brown4")) +
+    labs(
+      x = models[[i]]$x_label,
+      y = ""
+    ) +
+    theme_minimal(base_size = 14)+
+    theme(legend.position = "none",
+          axis.title.x = element_text(size = 10))  # Adjust x-axis label text size) 
+  
+  # Add the plot to the list
+  plots_list[[i]] <- plot
+}  
+
+
+# View one of the plots
+#plots_list[[6]]
+
+abund_plots <- wrap_plots(plots_list, ncol = 2)
+abund_plots
+```
+
+```{r Beta Table Abundance, echo=FALSE,message=FALSE}
+
+#| Label: tbl-beta-abundance
+
+# Define the models and their values 
+models3 <- list(
+  list(name = "Urban", model = urban, beta = 1.45, estimate = 0.377, SE = 0.0931, pvalue = 0.001),
+  list(name = "Habitat-Perc Deciduous", model = habitat2, beta = 0.99, estimate = -0.000667, SE = 0.188, pvalue = 0.997),
+  list(name = "Habitat-Perc Impervious", model = habitat2, beta = 1.58, estimate = 0.462445, SE = 0.147, pvalue = 0.001),
+  list(name = "Habitat-Forest Height", model = habitat2, beta = 1.16, estimate = 0.150124, SE = 0.206, pvalue = 0.466),
+  list(name = "Rodenticide", model = AR_mod, beta = 1.38, estimate = 0.324, SE = 0.123, pvalue = 0.008),
+  list(name = "Bobcat", model = bob, beta = 1.10, estimate = 0.0967, SE = 0.140, pvalue = 0.491)
+)
+
+
+conf_int <- list()
+
+for (i in seq_along(models3)) {
+  ll <- models3[[i]]$estimate - 1.96* models3[[i]]$SE
+  ul <- models3[[i]]$estimate + 1.96* models3[[i]]$SE
+  ci <- paste0(round(ll, 3), " - ", round(ul, 3)) 
+  
+  conf_int[[i]] <- ci
+}
+
+results_table <- tibble(
+  Model = c(
+    "Urban (Prop. Impervious)",
+    "Habitat (Prop. Deciduous)",
+    "Habitat (Prop. Impervious)",
+    "Habitat (Mean Forest Height)",
+    "Rodenticide (Exposure)",
+    "Bobcat (Detection Rate)"
+  ),
+  Estimate = round(c(
+    models3[[1]]$estimate,
+    models3[[2]]$estimate,
+    models3[[3]]$estimate,
+    models3[[4]]$estimate,
+    models3[[5]]$estimate,
+    models3[[6]]$estimate
+  ),3),
+  CI = unlist(conf_int),
+  `P-Value` = c(
+    models3[[1]]$pvalue,
+    models3[[2]]$pvalue,
+    models3[[3]]$pvalue,
+    models3[[4]]$pvalue,
+    models3[[5]]$pvalue,
+    models3[[6]]$pvalue
+  )
+)
+
+# Make a table
+kable(results_table, col.names = c("Model(covariate)", "Estimate","CI (95%)", "P-Value"), caption = "Summary of fisher relative abundance model results, including beta estimates (backtransformed from log scale), 95% confidence intervals, and p-values for predictors in New Hampshire, USA during the summer of 2022.")
+
+```
+
+```{r AIC Abundance, echo=FALSE,message=FALSE}
+# Create a data frame for the model comparison results
+
+#| Label: tbl-aic-abundance
+a_aic_results <- data.frame(
+  Model = c("Urban", "Habitat", "Rodenticide", "Bobcat"),
+  AIC = c(752.67, 756.05, 758.54, 764.34),
+  ΔAIC = c(0.00, 3.38, 5.86, 11.67), 
+  Weight = c(0.8016, 0.1482, 0.0428, 0.0023),
+  K = c(3, 5, 3, 3),
+  stringsAsFactors = FALSE
+)
+
+# Create the table 
+kable(a_aic_results, caption = "AIC model comparison results for fisher abundance in New Hampshire, USA. AIC value(AIC), AIC differences (ΔAIC), Akaike weights (Weight), and the number of parameters (K) for each model.", digits = 4)
+
+```
+
+```{r Occupancy Models, echo=FALSE, message=FALSE, results='hide', fig.show='hide',warning=FALSE}
+
+#Occupancy
+occRN<-unmarkedFrameOccu(y=y, siteCovs = siteCovs)
+summary(occRN)
+#Models
+null_occ<-occu(~1 ~1, data=occRN) #null
+summary(null_occ) #log-odds of occupancy so need to back transform to probability
+backTransform(null,'state') #Probability of occupancy is 0.495
+
+bob_occ<-occu(~1 ~bobcat_rate, occRN)
+summary(bob_occ)
+backTransform(linearComb(bob_occ,coefficients = c(0,1), type='state')) #Probability of occupancy at mean bobcat relative abundance is 0.23
+backTransform(linearComb(bob_occ,coefficients = c(1,1), type='state')) #Probability of occupancy at high bobcat relative abundance is 0.224
+backTransform(linearComb(bob_occ,coefficients = c(1,-1), type='state'))#Probability of occupancy at low bobcat relative abundance is 0.235
+
+AR_mod_occ <- occu(~1 ~AR_mean, occRN)
+summary(AR_mod)
+backTransform(linearComb(AR_mod_occ, coefficients = c(0, 1), type ='state')) # 0.222
+
+#use the cov that are not highly correlated, using only mixed because of histogram results
+habitat_occ<-occu(~1 ~perc_mixed+perc_imper+meanFH, occRN)
+summary(habitat_occ)
+backTransform(linearComb(habitat_occ,coefficients = c(1,0,0,0), type='state')) #Probability of occupancy with hab model 0.189
+
+
+decid_occ<-occu(~1 ~perc_decid, occRN)
+summary(decid_occ)
+backTransform(linearComb(decid_occ,coefficients = c(1,0), type='state'))#.201
+
+urban_occ <- occu(~1 ~perc_imper, occRN)
+summary(urban_occ)
+backTransform(linearComb(urban_occ,coefficients = c(1,0), type='state')) #0.192
+
+forestH_occ <- occu(~1 ~meanFH, occRN)
+summary(forestH_occ)
+backTransform(linearComb(forestH_occ,coefficients = c(1,0), type='state')) #0.200
+
+#all covariates 
+global_occ<-occu(~1 ~bobcat+perc_mixed+perc_imper+meanFH, occRN)
+summary(global_occ)
+backTransform(linearComb(global_occ,coefficients = c(1,0,0,0,0), type='state')) #probability 0.189
+
+
+#Apparently there is one line of code to make a plot
+plotEffects(bob_occ, "state", "bobcat")
+
+plots<-par(mfrow=c(2,2))
+plots<-plotEffects(global_occ,"state", "bobcat")
+plots<-plotEffects(global_occ,"state", "perc_mixed")
+plots<-plotEffects(global_occ,"state", "perc_imper")
+plots<-plotEffects(global_occ,"state", "meanFH")
+
+#using deciduous instead of mixed forest
+habitat2_occ<-occu(~1 ~perc_decid+perc_imper+meanFH, occRN)
+summary(habitat2_occ)
+backTransform(linearComb(habitat2_occ,coefficients = c(1,0,0,0), type='state')) #Probability of occupancy with hab model 0.191
+
+#all covariates 
+global2_occ<-occu(~1 ~bobcat_rate+perc_decid+perc_imper+meanFH+AR_mean, occRN)
+summary(global2_occ)
+backTransform(linearComb(global2_occ,coefficients = c(1,0,0,0,0,0), type='state')) #probability 0.216
+
+occ.set3<-fitList('null'=null_occ,'bob'=bob_occ, 'AR' = AR_mod_occ, "Urban" = urban_occ, 'habitat'=habitat2_occ)
+modSel(occ.set3)
+
+plots1 <- par(mfrow=c(2,2))
+plots1<-plotEffects(habitat2_occ,"state", "perc_decid")
+plots1<-plotEffects(habitat2_occ,"state", "perc_imper")
+plots1<-plotEffects(habitat2_occ,"state", "meanFH")
+
+plots2<-par(mfrow=c(2,3))
+plots2<-plotEffects(global2_occ,"state", "bobcat_rate")
+plots2<-plotEffects(global2_occ,"state", "perc_decid")
+plots2<-plotEffects(global2_occ,"state", "perc_imper")
+plots2<-plotEffects(global2_occ,"state", "meanFH")
+plots2<-plotEffects(global2_occ,"state", "AR_mean") 
+
+```
+
+```{r Plotting Occu with for loop from Unmarked Package,echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+####Occupancy Plots####
+# Define the models and their respective covariates
+models2 <- list(
+  list(model = bob_occ, covariate = "bobcat_rate", x_label = "Bobcat Detection Rate", model_type = "Bobcat"),
+  list(model = urban_occ, covariate = "perc_imper", x_label = "Urban", model_type = "Urban"),
+  list(model = habitat2_occ, covariate = "perc_decid", x_label = "Proportion Deciduous Forest", model_type = "Habitat"),
+  list(model = habitat2_occ, covariate = "perc_imper", x_label = "Proportion Impervious Surface", model_type = "Habitat"),
+  list(model = habitat2_occ, covariate = "meanFH", x_label = "Average Forest Height", model_type = "Habitat"),
+  list(model = AR_mod_occ, covariate = "AR_mean", x_label = "Rodenticide Exposure",model_type = "Rodenticide")
+)
+
+# Initialize lists to store effect data and plots
+effect_data_list2 <- list()
+plots_list2 <- list()
+
+# Loop through models and create plots
+for (i in seq_along(models2)) {
+  # Extract the effect data for the current model and covariate
+  current_effect_data2 <- plotEffectsData(models2[[i]]$model, "state", models2[[i]]$covariate)
+  
+  # Add the model type to the effect data
+  current_effect_data2$model_type <- models2[[i]]$model_type
+  
+  # Store the effect data in the list
+  effect_data_list2[[i]] <- current_effect_data2
+  
+  # Create a ggplot for the current model
+  plot <- ggplot(current_effect_data2, aes(x = covariateValue, y = Predicted)) +
+    geom_line(aes(color = model_type),size = 1) +
+    geom_ribbon(aes(ymin = lower, ymax = upper, fill = model_type), alpha = 0.2) +
+    scale_color_manual(values = c("Bobcat" = "blue", "Urban" = "orange", 
+                                  "Habitat" = "green4", "Rodenticide" = "brown4")) +
+    scale_fill_manual(values = c("Bobcat" = "blue", "Urban" = "orange", 
+                                 "Habitat" = "green4", "Rodenticide" = "brown4")) +
+    labs(
+      x = models[[i]]$x_label,
+      y = ""
+    ) +
+    theme_minimal(base_size = 14)+
+    theme(legend.position = "none",
+          axis.title.x = element_text(size = 10)) 
+  
+  # Add the plot to the list
+  plots_list2[[i]] <- plot
+}  
+
+
+# View one of the plots
+#plots_list2[[6]]
+
+occu_plots <- wrap_plots(plots_list2, ncol = 2)
+occu_plots
+
+```
+
+```{r Make New Plots with abundance and occupancy plots, echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+# Try to make a shared y-label with the new plots abund_plots and occu_plots
+
+# Create the shared y-label
+a_shared_y_label <- textGrob(
+  "Relative Abundance", 
+  rot = 90, 
+  gp = gpar(fontsize = 14, fontface = "bold")
+)
+
+occu_shared_y_label <- textGrob(
+  "Occupancy Probability", 
+  rot = 90, 
+  gp = gpar(fontsize = 14, fontface = "bold")
+)
+
+# Add the shared y-axis label to new abundance plots
+abund_final_plot <- plot_grid(
+  a_shared_y_label, abund_plots, 
+  ncol = 2, rel_widths = c(0.05, 1)
+)
+
+abund_final_plot #NOICE
+
+occu_final_plot <- plot_grid(
+  occu_shared_y_label, occu_plots, 
+  ncol = 2, rel_widths = c(0.05, 1)
+)
+
+occu_final_plot
+
+```
+
+```{r Rel Abund Fig Captions, echo=FALSE,message=FALSE, results='hide', fig.width= 5, fig.height=5}
+#| label: fig-relabund
+#| fig-cap: "Relationship of fisher relative abundance to covariates from the bobcat(blue), urban(yellow), habitat(green), and rodenticide(brown) models fit to detection data from 306 camera traps in New Hampshire, USA during the summer of 2022."
+
+abund_final_plot
+```
+
+```{r Occupancy Estimates, echo=FALSE, message=FALSE, results='hide', warning=FALSE, fig.show='hide'}
+
+# Example site data with covariate values for each model
+
+site_occ_estimates <- read.csv("fisherdata2_01Dec.csv") %>% 
+  dplyr::select(-X)
+
+site_occ_estimates <- site_occ_estimates %>% 
+  dplyr::select(CameraID, perc_imper, perc_decid, meanFH, AR_mean, bobcat_rate) %>% 
+  mutate(perc_decid = perc_decid / 100)
+
+# Coefficients (Betas) from the models
+occ_estimate_models <- list(
+  Urban = c(intercept = -1.263, perc_imper = 0.523),
+  Habitat = c(intercept = -1.2684, perc_decid = 0.0609, perc_imper = 0.6428, meanFH = 0.1637),
+  Rodenticide = c(intercept = -1.257, AR_mean = 0.406),
+  Bobcat = c(intercept = -1.2103, bobcat_rate = -0.0319)
+)
+
+# Function to calculate abundance
+calculate_occ <- function(data, betas, covariates) {
+  linear_comb <- betas["intercept"]
+  for (cov in covariates) {
+    linear_comb <- linear_comb + data[[cov]] * betas[[cov]]
+  }
+  occupancy <- 1 / (1 + exp(-linear_comb)) # Logistic transformation to ensure values between 0 and 1
+  return(occupancy)
+}
+
+# Calculate abundance for each model and add to the site data
+site_occ_estimates$Urban_occupancy <- calculate_occ(site_occ_estimates, occ_estimate_models$Urban, covariates = c("perc_imper"))
+site_occ_estimates$Habitat_occupancy <- calculate_occ(site_occ_estimates, occ_estimate_models$Habitat, covariates = c("perc_decid", "perc_imper", "meanFH"))
+site_occ_estimates$Rodenticide_occupancy <- calculate_occ(site_occ_estimates, occ_estimate_models$Rodenticide, covariates = c("AR_mean"))
+site_occ_estimates$Bobcat_occupancy <- calculate_occ(site_occ_estimates, occ_estimate_models$Bobcat, covariates = c("bobcat_rate"))
+
+write.csv(site_occ_estimates, "fisheroccupancy_05Dec.csv")
+
+site_occ_summ <- site_occ_estimates %>% 
+  drop_na() %>% 
+  summarize(
+    mean_urban = mean(Urban_occupancy),
+    minimum_urban = min(Urban_occupancy),
+    maximum_urban = max(Urban_occupancy),
+    range_urban = max(Urban_occupancy) - min(Urban_occupancy),
+    
+    mean_habitat = mean(Habitat_occupancy),
+    minimum_habitat = min(Habitat_occupancy),
+    maximum_habitat = max(Habitat_occupancy),
+    range_habitat = max(Habitat_occupancy) - min(Habitat_occupancy),
+    
+    mean_AR = mean(Rodenticide_occupancy),
+    minimum_AR = min(Rodenticide_occupancy),
+    maximum_AR = max(Rodenticide_occupancy),
+    range_AR = max(Rodenticide_occupancy) - min(Rodenticide_occupancy),
+    
+    mean_bob = mean(Bobcat_occupancy),
+    minimum_bob = min(Bobcat_occupancy),
+    maximum_bob = max(Bobcat_occupancy),
+    range_bob = max(Bobcat_occupancy) - min(Bobcat_occupancy)
+  )
+
+```
+
+**Predicted Occupancy Models**
+
+Occupancy is the probability a fisher will be found at a site. Fisher occupancy was highest with the habitat model, ranging from `r round(site_occ_summ$minimum_habitat,3)` to `r round(site_occ_summ$maximum_habitat,3)`, (mean=`r round(site_occ_summ$mean_habitat,3)`). The rodenticide model, ranged from `r round(site_occ_summ$minimum_AR,3)` to `r round(site_occ_summ$maximum_AR,3)`, (mean=`r round(site_occ_summ$mean_AR,3)`). Fisher occupany probability from the urban model ranged from `r round(site_occ_summ$minimum_urban,3)` to `r round(site_occ_summ$maximum_urban,3)`, (mean=`r round(site_occ_summ$mean_urban,3)`). The bobcat model had the lowest occupancy probability ranging from `r round(site_occ_summ$minimum_bob,3)` to `r round(site_occ_summ$maximum_bob,3)`, (mean=`r round(site_occ_summ$mean_bob,3)`).
+
+Similar to abundance estimates, the models incorporating the proportion of impervious surface were significant predictors of occupancy. Rodenticide exposure was a also significant predictor of occupancy (Table 3, @fig-Occu). Model fit was similar for occupancy to fisher abundance models with the urban model best fitting the data (Table 4).
+
+```{r Beta Table Occupancy, echo=FALSE,message=FALSE}
+
+#| Label: tbl-beta-occupancy
+
+# Define the models and their values 
+models4 <- list(
+  list(name = "Urban", model = urban, estimate = 0.523, SE = 0.190, pvalue = 0.005),
+  list(name = "Habitat-Perc Deciduous", model = habitat2, estimate = 0.0609, SE = 0.219, pvalue = 0.781),
+  list(name = "Habitat-Perc Impervious", model = habitat2, estimate = 0.6428, SE = 0.245, pvalue = 0.008),
+  list(name = "Habitat-Forest Height", model = habitat2, estimate = 0.1637, SE = 0.250, pvalue = 0.513),
+  list(name = "Rodenticide", model = AR_mod, estimate = 0.406, SE = 0.174, pvalue = 0.019),
+  list(name = "Bobcat", model = bob, estimate = -0.0319, SE = 0.177, pvalue = 0.857)
+)
+
+
+conf_int2 <- list()
+
+for (i in seq_along(models4)) {
+  ll <- models4[[i]]$estimate - 1.96* models4[[i]]$SE
+  ul <- models4[[i]]$estimate + 1.96* models4[[i]]$SE
+  ci <- paste0(round(ll, 3), " - ", round(ul, 3)) 
+  
+  conf_int2[[i]] <- ci
+}
+
+results_table2 <- tibble(
+  Model = c(
+    "Urban (Prop. Impervious)",
+    "Habitat (Prop. Deciduous)",
+    "Habitat (Prop. Impervious)",
+    "Habitat (Mean Forest Height)",
+    "Rodenticide (Exposure)",
+    "Bobcat (Detection Rate)"
+  ),
+  Estimate = round(c(
+    models4[[1]]$estimate,
+    models4[[2]]$estimate,
+    models4[[3]]$estimate,
+    models4[[4]]$estimate,
+    models4[[5]]$estimate,
+    models4[[6]]$estimate
+  ),3),
+  CI = unlist(conf_int2),
+  `P-Value` = c(
+    models4[[1]]$pvalue,
+    models4[[2]]$pvalue,
+    models4[[3]]$pvalue,
+    models4[[4]]$pvalue,
+    models4[[5]]$pvalue,
+    models4[[6]]$pvalue
+  )
+)
+
+# Make a table
+kable(results_table2, col.names = c("Model(covariate)", "Estimate", "CI (95%)", "P-Value"), caption = "Summary of fisher occupancy model results, including beta estimates (backtransformed from log scale), 95% confidence intervals, and p-values for predictors in New Hampshire, USA during the summer of 2022.")
+
+```
+
+```{r AIC Occupancy, echo=FALSE,message=FALSE}
+
+#| Label: tbl-aic-occupancy
+#| 
+aic_results <- data.frame(
+  Model = c("Urban", "Habitat", "Rodenticide", "Bobcat"),
+  AIC = c(760.51, 763.83, 764.64, 770.35),
+  ΔAIC = c(0.00, 3.31, 4.12, 9.84), 
+  Weight = c(0.7434, 0.1420, 0.0946, 0.0054),
+  K = c(3,5,3,3),
+  stringsAsFactors = FALSE
+)
+
+# Create the table 
+kable(aic_results, caption = "AIC model comparison results for the probability of occupancy for fishers in New Hampshire, USA. AIC value(AIC), AIC differences (ΔAIC), Akaike weights (Weight), and the number of parameters (K) for each model.", digits = 4)
+
+```
+
+```{r Occu Fig Captions, echo=FALSE,message=FALSE, results='hide', fig.width= 5, fig.height=5}
+#| label: fig-Occu
+#| fig-cap: "Probability of occupancy estimates for fisher by covariate from the bobcat(blue), urban(yellow), habitat(green), and rodenticide(brown) models fit to detection data from 306 camera traps in New Hampshire, USA during the summer of 2022."
+
+occu_final_plot
+
+```
+
+## Discussion
+
+Our analysis of fisher abundance and occupancy across New Hampshire provides valuable insights into the ecological and human factors influencing this elusive mesocarnivore. By leveraging detection data and site-specific covariates, our models evaluated the role of habitat characteristics, urbanization, rodenticide exposure, and interspecific competition on fisher populations across 306 sites.
+
+**Urbanization and Rodenticide Exposure**
+
+Urbanization and rodenticide exposure results were similar for both relative abundance and occupancy. Both abundance and occupancy showed a positive relationship to urbanization and rodentice. We expected that urbanization would be positively related to fisher abundance and occupancy, however we did not expect there to be a strong positive relationship to rodenticide. This relationship may reflect indirect trophic effects, where prey species exposed to rodenticides become accessible to fishers, or a potential ecological trap if rodenticides also increase fisher mortality. Although not correlated in these models, urbanization and rodenticide are related as the use of rodenticide increases with urbanization [@silveira2024a], [@buckley2024].
+
+**Habitat Influences on Fisher Abundance and Occupancy**
+
+Our habitat models revealed nuanced relationships between forest structure, impervious surface, and fisher abundance. Higher percentages of deciduous forest and mean forest height were positively associated with fisher abundance and occupancy, though not significant, but still emphasizes the species' reliance on structurally complex habitats. However, impervious surface, a proxy for urbanization, had stronger effects when modeled with forest variables than when alone. Of note in this study, only one spatial scale (3km) was used to measure the effects of each covariate. The effects of covariates on the abundance and occupancy could change at different scales and therefore should be addressed in future work [@wiens1989].
+
+**Bobcat Influence on Fisher Abundance and Occupancy**
+
+The influence of bobcats as a natural predictor of fisher abundance and occupancy was interesting as it was the only covariate to have different results between the two. The relationship between bobcat detection rate and fisher relative abundance was positive while the relationship was negative with occupancy. This would suggest that the two species have limited competition in the same space where both species currently occupy, but bobcats could be preventing fishers from disbursing into unoccupied terrain. This may indicate temporal or spatial separation that mitigates competitive interactions. Including urbanization into the interaction may further explain the positive relationship to abundance as urban adapted species, fishers in this case, are taking advantage of the safety of human development [@poisson2023].
+
+**Implications for Management**
+
+Our findings suggest that fishers can persist in human-modified landscapes as well as the forested landscape they evolved to inhabit. Management efforts should prioritize maintaining large forest patches that provide the required vertical and horizontal structure for reproduction while mitigating rodenticide exposure through education and policy. Monitoring these factors over time will be critical in understanding long-term trends and ensuring sustainable fisher populations in New Hampshire. This analysis advances our understanding of fisher ecology in this era by describing the relationship between habitat, the human landscape, and interspecific interactions.
